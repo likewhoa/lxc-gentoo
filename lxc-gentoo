@@ -82,9 +82,8 @@ execute_exclusively()
 		printf "Attempting to obtain an exclusive lock (timeout: 30 min) named \"%s\"...\n" "$lock_name"
 
 		printf -v time_started "%(%s)T" "-1"
-		flock -x -w 1800  50
 
-		if [[ $? -ne 0 ]]; then
+		if ! flock -x -w 1800 50; then
 			printf " => unable to obtain after %s seconds, aborting.\n" "$(($(printf "%(%s)T" "-1") - $time_started))"
 			return 2
 		else
@@ -126,10 +125,7 @@ populate_dev()
 	{
 		# newer stage3 include too many useless nodes, remove them
 		rm -f hda*
-		rm -f sda*
-		rm -f sdb*
-		rm -f sdc*
-		rm -f sdd*
+		rm -f sd{a..d}*
 		rm -f tty*
 		rm -f core
 		rm -f mem
@@ -137,21 +133,21 @@ populate_dev()
 		rm -rf input/
 
 		# tabsize 4
-		mknod -m 666 null		c 1 3
-		mknod -m 666 zero		c 1 5
-		mknod -m 666 full		c 1 7
+		mknod -m 666 null c 1 3
+		mknod -m 666 zero c 1 5
+		mknod -m 666 full c 1 7
 
-		mknod -m 666 random		c 1 8
-		mknod -m 666 urandom	c 1 9
+		mknod -m 666 random c 1 8
+		mknod -m 666 urandom  c 1 9
 
-		mknod -m 600 console	c 5 1
-		mknod -m 666 tty		c 5 0
-		mknod -m 666 tty0		c 4 0
-		mknod -m 666 tty1		c 4 1
+		mknod -m 600 console  c 5 1
+		mknod -m 666 tty  c 5 0
+		mknod -m 666 tty0 c 4 0
+		mknod -m 666 tty1 c 4 1
 
-		mknod -m 600 initctl	p
+		mknod -m 600 initctl  p
 
-		mknod -m 666 ptmx		c 5 2
+		mknod -m 666 ptmx c 5 2
 		mkdir -m 755 pts
 
 		mkdir -m 1777 shm
@@ -201,11 +197,7 @@ setup_portage()
 {
 	# do a primitive portage setup
 	mkdir -p "$ROOTFS/etc/portage" && \
-	mkdir -p "$ROOTFS/var/portage/tmp" && \
-	mkdir -p "$ROOTFS/var/portage/tree" && \
-	mkdir -p "$ROOTFS/var/portage/logs" && \
-	mkdir -p "$ROOTFS/var/portage/packages" && \
-	mkdir -p "$ROOTFS/var/portage/distfiles" \
+	mkdir -p "$ROOTFS/var/portage/{tmp,tree,logs,packages,distfiles}" && \
 		|| die 2 "Error: unable to create needed portage directories.\n"
 
 	# relocate profile symlink
@@ -232,21 +224,21 @@ setup_portage()
 	FEATURES="\$FEATURES split-elog"
 	EOF
 
-	if [[ "$PORTAGE_SOURCE" == "none" ]]; then
+	if [ "$PORTAGE_SOURCE" == "none" ]; then
 		printf "Skipping portage tree setup\n"
 	else
 		# We need to set up the portage tree
-		if [[ -z "$PORTAGE_SOURCE" ]]; then
+		if [ -z "$PORTAGE_SOURCE" ]; then
 			execute_exclusively "portage" fetch_portage \
 				|| die 1 "Error: unable to fetch a portage snapshot.\n"
 		fi
 
 		# PORTAGE_SOURCE will be set by fetch_portage.
-		if [[ -f "$PORTAGE_SOURCE" ]]; then
+		if [ -f "$PORTAGE_SOURCE" ]; then
 			printf "Extracting the portage tree into %s/var/portage/tree...\n" "$ROOTFS"
 			tar -xp --strip-components 1 -C "$ROOTFS/var/portage/tree/" -f "$PORTAGE_SOURCE" \
 				|| die 2 "Error: unable to extract the portage tree.\n"
-		elif [[ -d "$PORTAGE_SOURCE" ]]; then
+		elif [ -d "$PORTAGE_SOURCE" ]; then
 			printf "Will bind mount the portage tree from the host (%s).\n" "$PORTAGE_SOURCE"
 		else
 			printf "Warning: I don't know what to do with this portage source (%s)\n" "$PORTAGE_SOURCE"
@@ -477,7 +469,7 @@ write_lxc_configuration()
 
 set_guest_root_password()
 {
-	[[ -z "$GUESTROOTPASS" ]] && return # pass is empty, abort
+	[ -z "$GUESTROOTPASS" ] && return # pass is empty, abort
 
 	echo -n " - setting guest root password.."
 	echo "root:$GUESTROOTPASS" | chroot "$ROOTFS" chpasswd
@@ -535,7 +527,7 @@ fetch_portage()
 	local dest="$CACHE/portage-latest.tar.bz2"
 
 	mkdir -p "$CACHE"
-	if [[ ! -f "$dest" ]]; then
+	if [ ! -f "$dest" ]; then
 		# don't update
 		printf "Downloading Gentoo portage (software build database) snapshot...\n"
 
@@ -551,7 +543,7 @@ fetch_portage()
 
 configure()
 {
-	if [[ -z ${QUIET} ]]; then
+	if [ -z ${QUIET} ]; then
 		# choose a container name, default is already in shell NAME variable
 		read -p "What is the name for the container (recommended <=15 chars)? " -ei "$NAME" NAME
 
@@ -577,12 +569,12 @@ configure()
 
 		# Type guest root password
 		read -s -p "Type guest root password (enter for none/use already defined): "
-		if [[ -n "$REPLY" ]]; then
+		if [ -n "$REPLY" ]; then
 			GUESTROOTPASS="$REPLY"
 		fi
 		printf "\n" # \n eaten by noecho
 
-		if [[ -z "${STAGE3_TARBALL}" ]]; then
+		if [ -z "${STAGE3_TARBALL}" ]; then
 			# choose the mirror
 			read -p "Which mirror to use for stage3 and Portage archive ? " -ei "$MIRROR" MIRROR
 
@@ -629,13 +621,13 @@ configure()
 				fi
 			done
 
-			if [[ ${#variants[@]} -eq 0 ]]; then
+			if [ ${#variants[@]} -eq 0 ]; then
 				die 6 "variants list empty, see wget's output above\n"
 			fi
 
 			printf "\n\nSelect desired container subarchitecture/variant for %s:\n" "$ARCH"
 			select ARCHVARIANT in "${variants[@]}"; do
-				if [[ -n "$ARCHVARIANT" ]]; then
+				if [ -n "$ARCHVARIANT" ]; then
 					break
 				fi
 			done
@@ -643,8 +635,8 @@ configure()
 
 	fi
 
-	if [[ -n "$CONFFILE" ]]; then
-		if [[ -d "$CONFFILE" ]]; then
+	if [ -n "$CONFFILE" ]; then
+		if [ -d "$CONFFILE" ]; then
 			CONFFILE="$CONFFILE/${NAME}.conf"
 		# else
 		#	we already have a valid config file name
@@ -669,9 +661,9 @@ configure()
 
 	echo -e "Thanks! Now sit back and relax while your gentoo brews...\n\n"
 	# nice pondering material
-	if which fortune > /dev/null 2>&1 ; then
+	if hash fortune > /dev/null 2>&1 ; then
 		echo '-----------------------------------------------------------------'
-		if which cowsay > /dev/null 2>&1 ; then
+		if hash cowsay > /dev/null 2>&1 ; then
 			cowsay `fortune -s`
 		else
 			fortune
@@ -685,27 +677,26 @@ create()
 	configure
 
 	# never hurts to have a fail-safe.
-	[[ -n "${NAME//\/}" ]] \
+	[ -n "${NAME//\/}" ] \
 		|| die 8 "\$NAME (%s) IS EMPTY OR MADE OF ONLY DIRECTORY SEPERATORS, THIS IS *VERY* BAD!\n" "$NAME"
 
 	# the rootfs name will be built with the container name
 	ROOTFS="./${NAME}"
 
 	# check if the conffile already exists
-	[[ -e "$CONFFILE" ]] && die 18 "Error: config file (%s) already exists!\n" "$CONFFILE"
+	[ -e "$CONFFILE" ] && die 18 "Error: config file (%s) already exists!\n" "$CONFFILE"
 
 	# check if the rootfs already exists
-	[[ -e "$ROOTFS" ]] && die 18 "Error: \$ROOTFS (%s) already exists!" "$ROOTFS"
+	[ -e "$ROOTFS" ] && die 18 "Error: \$ROOTFS (%s) already exists!" "$ROOTFS"
 	
 	# the stage3 might not be possible to fetch, for isntance if we are offline. in that
 	# case we use the latest one available. if that fails also, then we die.
-	if [[ -z "$STAGE3_TARBALL" ]]; then
+	if [ -z "$STAGE3_TARBALL" ]; then
 		# Fetch us a stage3
-		execute_exclusively "${ARCH}_${ARCHVARIANT}_rootfs" fetch_stage3
-		if [[ $? -ne 0 ]]; then
+		if execute_exclusively "${ARCH}_${ARCHVARIANT}_rootfs" fetch_stage3; then
 			# try to detect an existing stage3 (sorted to the latest mtime)
 			STAGE3_TARBALL=`find $CACHE |grep '/stage3-'${ARCH} | grep tar | xargs ls -t1|head -n 1`
-			if [[ ! -e "$STAGE3_TARBALL" ]]; then
+			if [ ! -e "$STAGE3_TARBALL" ]; then
 				die 18 "ERROR: Failed to fetch stage3, and no previous stage3 available.\n"
 			fi
 			printf "      - Failed to fetch stage3, but found existing stage3 tarball instead.\n"
@@ -716,8 +707,7 @@ create()
 	printf "\nUnpacking filesystem from %s to %s ... " "$STAGE3_TARBALL" "$ROOTFS"
 	mkdir -p "$ROOTFS"
 
-	tar -xpf "$STAGE3_TARBALL" -C "$ROOTFS"
-	if [[ $? -ne 0 ]]; then
+	if tar -xpf "$STAGE3_TARBALL" -C "$ROOTFS"; then
 		printf "FAILED.\n"
 		return 1
 	else
@@ -895,6 +885,6 @@ case "$1" in
 		die 16 "purge is to be removed\n" ;;
 	*)
 		help
-		exit 1;;
+		exit 1
 esac
 
